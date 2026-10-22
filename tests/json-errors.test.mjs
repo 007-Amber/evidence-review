@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import worker from '../worker/index.js';
+const html=await(await worker.fetch(new Request('https://test.local/'))).text();
+const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const source=script.slice(script.indexOf('function parseExternal('),script.indexOf("$('#importResult').onclick"));
+const parse=new Function(source+';return parseExternal;')();
+test('空JSON提供下一步指引，不暴露英文解析错误',()=>assert.throws(()=>parse(''),/还没有粘贴AI结果/));
+test('截断JSON提示复制全部内容',()=>assert.throws(()=>parse('{"taskId":"x","claims":['),/没有粘贴完整/));
+test('接受Markdown JSON围栏',()=>assert.equal(parse('```json\n{"taskId":"x","claims":[]}\n```').taskId,'x'));
+test('语法错误给出格式指引',()=>assert.throws(()=>parse('{bad}'),/只返回JSON/));
+test('数组不是合格核查对象',()=>assert.throws(()=>parse('[]'),/JSON对象/));
+test('生成页已包含本地校验函数及完成流程',()=>{assert.ok(!html.includes('__CORE__'));assert.ok(html.includes('async function taskId'));assert.ok(html.includes('function validateResult'));assert.ok(html.includes('完成复核，结束本次'));assert.ok(!script.includes("fetch('/api/task'"));assert.ok(!script.includes("fetch('/api/import'"));});

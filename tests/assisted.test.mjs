@@ -1,0 +1,12 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import worker,{REAL_CASE,taskId,calculate} from '../worker/index.js';
+const req=(path,d,origin='https://test.local')=>new Request('https://test.local'+path,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(d)});
+const response=async()=>({taskId:await taskId(REAL_CASE),claims:[{claim:'苹果2025财年总净销售额为416161百万美元',type:'fact',status:'supported',reason:'与2025财年全年合并报表行一致；单位为百万美元，非亿元。',citations:[{sourceId:'s1',quote:'Total net sales (1) 102,466 94,930 416,161 391,035'}]}]});
+test('导出任务包括原文、格式约束和输入标识',async()=>{const r=await worker.fetch(req('/api/task',REAL_CASE));assert.equal(r.status,200);const d=await r.json();assert.equal(d.taskId,await taskId(REAL_CASE));assert.ok(d.prompt.includes(REAL_CASE.draft));assert.ok(d.prompt.includes('taskId'))});
+test('真实来源案例导入：校验引用但不认证模型来源',async()=>{const r=await worker.fetch(req('/api/import',{...REAL_CASE,output:await response()}));assert.equal(r.status,200);const d=await r.json();assert.equal(d.mode,'assisted');assert.ok(d.warnings.some(x=>x.includes('不认证生成工具')))});
+test('旧任务不得用于新稿件',async()=>{const r=await worker.fetch(req('/api/import',{...REAL_CASE,draft:REAL_CASE.draft+'新增主张',output:await response()}));assert.equal(r.status,400)});
+test('外部AI假引用被拒绝',async()=>{const d=await response();d.claims[0].citations[0].quote='虚构原文';assert.equal((await worker.fetch(req('/api/import',{...REAL_CASE,output:d}))).status,400)});
+test('外部AI坏JSON及跨域导入被拒绝',async()=>{assert.equal((await worker.fetch(new Request('https://test.local/api/import',{method:'POST',headers:{origin:'https://test.local'},body:'bad'}))).status,400);assert.equal((await worker.fetch(req('/api/task',REAL_CASE,'https://evil.local'))).status,403)});
+test('真实财报千位分隔符可以复算',()=>{const quote='Total net sales (1) 102,466 94,930 416,161 391,035';const c=calculate({sourceId:'s1',quote,operation:'growth',a:416161,b:391035,unit:'百万美元'},REAL_CASE.sources);assert.ok(Math.abs(c.value-6.4255)<0.001)});
+test('任务标识随来源内容、单位及日期修改而变化',async()=>{const d=structuredClone(REAL_CASE);d.sources[0].date='2026-01-01';assert.notEqual(await taskId(d),await taskId(REAL_CASE))});

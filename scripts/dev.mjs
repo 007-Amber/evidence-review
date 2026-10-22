@@ -1,0 +1,4 @@
+import http from 'node:http';
+import worker from '../worker/index.js';
+const port=Number(process.env.PORT||4173);
+http.createServer(async(req,res)=>{try{const chunks=[];for await(const c of req)chunks.push(c);const url='http://'+req.headers.host+req.url;const headers=new Headers();for(const [k,v]of Object.entries(req.headers))if(v)headers.set(k,Array.isArray(v)?v.join(','):v);const body=Buffer.concat(chunks);const request=new Request(url,{method:req.method,headers,...(!['GET','HEAD'].includes(req.method)?{body}:{} )});const response=await worker.fetch(request,{});res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));}catch{res.writeHead(500);res.end('Preview request failed')}}).listen(port,'0.0.0.0',()=>console.log('Preview ready on port '+port));
